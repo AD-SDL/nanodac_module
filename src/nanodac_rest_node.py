@@ -6,6 +6,7 @@ from madsci.common.types.action_types import ActionFailed, ActionSucceeded
 from madsci.common.types.node_types import RestNodeConfig
 from madsci.node_module.helpers import action
 from madsci.node_module.rest_node_module import RestNode
+from pydantic import Field
 
 from nanodac_interface import Nanodac
 
@@ -13,14 +14,10 @@ from nanodac_interface import Nanodac
 class NanodacNodeConfig(RestNodeConfig):
     """Configuration for the nanodac node module."""
 
-    nanodac_ip: Optional[str] = None
-    """IP address of the nanodac controller (Modbus/TCP)."""
-    nanodac_port: int = 502
-    """Modbus/TCP port, default 502."""
-    unit_id: int = 1
-    """Modbus slave/unit id, default 1."""
-    loop: int = 1
-    """Control loop exposed by default (1 or 2)."""
+    nanodac_ip: Optional[str] = Field(default=None, description="IP address of the nanodac controller (Modbus/TCP).")
+    nanodac_port: int = Field(default=502, description="Modbus/TCP port, default 502.")
+    unit_id: int = Field(default=1, description="Modbus slave/unit id, default 1.")
+    loop: int = Field(default=1, description="Control loop exposed by default (1 or 2).")
 
 
 class NanodacNode(RestNode):

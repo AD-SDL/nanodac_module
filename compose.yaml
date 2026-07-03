@@ -1,0 +1,22 @@
+name: nanodac
+services:
+  nanodac:
+    container_name: nanodac
+    image: ghcr.io/ad-sdl/nanodac_module
+    network_mode: host
+    environment:
+      - USER_ID=${USER_ID:-1000}
+      - GROUP_ID=${GROUP_ID:-1000}
+    env_file:
+      - path: .env
+        required: false
+    build:
+      context: .
+      dockerfile: Dockerfile
+      tags:
+        - ghcr.io/ad-sdl/nanodac_module:latest
+        - ghcr.io/ad-sdl/nanodac_module:dev
+    command: python -m nanodac_rest_node
+    volumes:
+      - ./node.settings.yaml:/home/madsci/node.settings.yaml
+      - ./.madsci:/home/madsci/.madsci

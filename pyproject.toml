@@ -1,0 +1,74 @@
+[project]
+name = "nanodac_module"
+version = "0.1.0"
+description = "MADSci node module for the Eurotherm nanodac temperature controller (Modbus/TCP)"
+authors = [
+    {name = "Doga Ozgulbas", email = "dozgulbas@anl.gov"},
+]
+dependencies = [
+    "madsci-node-module~=0.8.0",
+    "madsci-common~=0.8.0",
+    "madsci-client~=0.8.0",
+    "pymodbus>=3.6",
+]
+requires-python = ">=3.10,<3.13"
+readme = "README.md"
+license = {text = "MIT"}
+
+[project.urls]
+homepage = "https://github.com/AD-SDL/nanodac_module"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.12.0",
+    "pre-commit>=4.3.0",
+    "ipykernel>=6.29.5",
+    "pydantic-settings-export>=1.0.2",
+]
+
+[tool.pydantic_settings_export]
+project_dir = "."
+default_settings = [
+    "nanodac_rest_node:NanodacNodeConfig",
+]
+
+[[tool.pydantic_settings_export.generators.markdown]]
+paths = ["docs/Configuration.md"]
+
+[[tool.pydantic_settings_export.generators.dotenv]]
+paths = [".env.example"]
+
+[tool.pdm]
+distribution = true
+
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
+#####################
+# Development Tools #
+#####################
+
+[tool.ruff]
+line-length = 120
+indent-width = 4
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle
+    "F",  # Pyflakes
+    "B",  # flake8-bugbear
+    "I",  # isort
+    "W",  # Warning
+    # pydocstyle
+    "D100", "D101", "D102", "D103", "D104", "D105", "D106", "D107",
+]
+ignore = [
+    "E501",  # Line too long
+    "B006",  # Do not use mutable data structures for argument defaults
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

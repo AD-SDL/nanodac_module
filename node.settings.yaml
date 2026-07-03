@@ -1,0 +1,11 @@
+# Example node settings for the nanodac module.
+# MADSci discovers this file via walk-up from the working directory.
+# Precedence: CLI args > env vars > node.settings.yaml > settings.yaml
+node_name: nanodac
+node_url: http://0.0.0.0:2010
+
+# nanodac device connection (Modbus/TCP)
+nanodac_ip: 192.168.1.100  # placeholder - set to your controller's IP (or NODE_NANODAC_IP env var)
+nanodac_port: 502
+unit_id: 1
+loop: 1

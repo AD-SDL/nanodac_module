@@ -161,6 +161,6 @@ class Nanodac:
 
 if __name__ == "__main__":
     """Smoke test: connect and print Loop.1 status."""
-    nanodac = Nanodac("192.168.1.100")  # replace with your controller's IP
+    nanodac = Nanodac("10.54.109.53")  # APS 9-BM nanodac controller
     print(nanodac.get_status())
     nanodac.disconnect()

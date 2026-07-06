@@ -5,10 +5,10 @@ Confirmed against nanodac v5.50, slave id 1, over Modbus/TCP (default port 502).
 nanodac Modbus notes (learned the hard way on this firmware):
   * The canonical "Loop.1 PV at register 1" is WRONG here - Loop.1.Main starts at
     base address 512 (Loop.2 at 640, +128 apart). Verified via iTools.
-  * REAL (float) parameters are read/written through the IEEE-float "mirror":
-    int_address + 0x8000, as two 16-bit registers, big-endian, high word first.
-  * An unwritten/unused float reads back as registers (0x0000, 0x8000) (~4.59e-41)
-    - the "no value" sentinel, mapped to None here.
+  * REAL (float) parameters are read/written in native IEEE-float form at
+    (scaled_int_address * 2) + 0x8000, two 16-bit registers, big-endian, high
+    word first (per HA030554 section 5.3). NOTE the *2: it is NOT scaled+0x8000 -
+    that lands on a different parameter (e.g. Channel.1 instead of Loop.1).
   * Bool/enum params (AutoMan, Inhibit, IntHold) are plain 1-register int reads;
     their float mirror is garbage, so read them as ints.
 """
@@ -19,7 +19,6 @@ from typing import Optional
 from pymodbus.client import ModbusTcpClient
 
 FLOAT_MIRROR = 0x8000
-NO_VALUE = (0x0000, 0x8000)  # nanodac "no value / not written" float sentinel
 
 LOOP_BASE = {1: 512, 2: 640}  # Loop.2 is +128 from Loop.1
 PARAM_OFFSET = {
@@ -80,11 +79,9 @@ class Nanodac:
             raise IOError(f"Modbus write error @ {address}: {wr}")
 
     @staticmethod
-    def _decode_float(regs: list) -> Optional[float]:
-        """Decode a nanodac IEEE-float register pair, mapping the no-value sentinel to None."""
+    def _decode_float(regs: list) -> float:
+        """Decode a nanodac IEEE-float register pair (big-endian, high word first)."""
         hi, lo = regs
-        if (hi, lo) == NO_VALUE:
-            return None
         return struct.unpack(">f", struct.pack(">HH", hi, lo))[0]
 
     @staticmethod
@@ -94,21 +91,29 @@ class Nanodac:
         return [hi, lo]
 
     def _address(self, param: str, loop: int) -> int:
-        """Resolve the integer Modbus address of a loop parameter."""
+        """Resolve the scaled-integer Modbus address of a loop parameter."""
         return LOOP_BASE[loop] + PARAM_OFFSET[param]
 
+    @staticmethod
+    def _native(scaled_addr: int) -> int:
+        """Native (IEEE float32) address for a scaled-integer address.
+
+        Per HA030554 section 5.3: native address = (scaled integer address * 2) + 0x8000.
+        """
+        return scaled_addr * 2 + FLOAT_MIRROR
+
     def read_parameter(self, param: str, loop: int = 1):
-        """Read a loop parameter (float via the mirror for REAL params, int otherwise)."""
+        """Read a loop parameter (native float for REAL params, scaled int otherwise)."""
         addr = self._address(param, loop)
         if param in REAL_PARAMS:
-            return self._decode_float(self._read_registers(addr + FLOAT_MIRROR, 2))
+            return self._decode_float(self._read_registers(self._native(addr), 2))
         return self._read_registers(addr, 1)[0]
 
     def write_parameter(self, param: str, value: float, loop: int = 1) -> None:
-        """Write a REAL loop parameter through the float mirror."""
+        """Write a REAL loop parameter as a native IEEE float."""
         if param not in REAL_PARAMS:
             raise ValueError(f"{param} is not a writable REAL parameter")
-        self._write_registers(self._address(param, loop) + FLOAT_MIRROR, self._encode_float(value))
+        self._write_registers(self._native(self._address(param, loop)), self._encode_float(value))
 
     # --- high-level temperature API ---
 
@@ -135,10 +140,9 @@ class Nanodac:
     def set_temperature(self, value: float, loop: int = 1) -> None:
         """Set the loop target setpoint. NOTE: physically drives the controller.
 
-        EXPERIMENTAL/UNVERIFIED on nanodac v5.50: the IEEE float mirror rejects
-        writes (Modbus illegal-address) and the scaled-int path behaves
-        inconsistently. Confirm the correct writable SP parameter and scaling via
-        the Eurotherm comms manual (HA030554) / iTools before relying on this.
+        Writes TargetSP as a native IEEE float at (scaled*2)+0x8000 per HA030554.
+        The applied setpoint is subject to the loop's SP limits (Loop.n.SP.SPHighLimit /
+        SPLowLimit), active-SP selection (SPSelect), and rate limit (SP.Rate).
         """
         self.write_parameter("TargetSP", value, loop)
 

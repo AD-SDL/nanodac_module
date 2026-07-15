@@ -32,6 +32,12 @@ PARAM_OFFSET = {
 }
 REAL_PARAMS = {"PV", "TargetSP", "WorkingSP", "ActiveOut"}
 
+# Loop.n.SP block scaled addresses (note: different +256 stride than the +128 Main block).
+# SP_RATE = setpoint ramp-rate limit (REAL, engineering units per minute; 0 = ramp off).
+# SP_RATE_DISABLE = bool (0 = rate limiting enabled, 1 = disabled).
+SP_RATE = {1: 5730, 2: 5986}
+SP_RATE_DISABLE = {1: 5731, 2: 5987}
+
 
 class Nanodac:
     """Python interface for remote get/set of a Eurotherm nanodac over Modbus/TCP."""
@@ -137,13 +143,33 @@ class Nanodac:
         """Return the loop control mode ('Auto' or 'Manual')."""
         return "Manual" if self.read_parameter("AutoMan", loop) else "Auto"
 
-    def set_temperature(self, value: float, loop: int = 1) -> None:
+    def get_setpoint_rate(self, loop: int = 1) -> float:
+        """Return the setpoint ramp-rate limit (engineering units/min; 0 = ramp off)."""
+        return self._decode_float(self._read_registers(self._native(SP_RATE[loop]), 2))
+
+    def set_setpoint_rate(self, rate: float, loop: int = 1) -> None:
+        """Set the setpoint ramp-rate limit (engineering units per minute).
+
+        rate > 0 enables ramping: the working setpoint slews toward the target at this
+        rate, smoothing large steps and reducing overshoot. rate == 0 disables it
+        (setpoint changes apply instantly).
+        """
+        # RateDisable is a single-register bool at its scaled address (0 = enabled).
+        self._write_registers(SP_RATE_DISABLE[loop], [0 if rate and rate > 0 else 1])
+        self._write_registers(self._native(SP_RATE[loop]), self._encode_float(rate))
+
+    def set_temperature(self, value: float, loop: int = 1, ramp_rate: Optional[float] = None) -> None:
         """Set the loop target setpoint. NOTE: physically drives the controller.
 
         Writes TargetSP as a native IEEE float at (scaled*2)+0x8000 per HA030554.
-        The applied setpoint is subject to the loop's SP limits (Loop.n.SP.SPHighLimit /
-        SPLowLimit), active-SP selection (SPSelect), and rate limit (SP.Rate).
+        If ``ramp_rate`` is given (engineering units/min), the setpoint ramp limit is set
+        first so the loop slews to ``value`` smoothly (ramp_rate=0 => instant step). If
+        ``ramp_rate`` is None, the existing ramp setting is left unchanged.
+        The applied setpoint is also subject to the loop's SP limits (SPHighLimit /
+        SPLowLimit) and active-SP selection (SPSelect).
         """
+        if ramp_rate is not None:
+            self.set_setpoint_rate(ramp_rate, loop)
         self.write_parameter("TargetSP", value, loop)
 
     def get_status(self, loop: int = 1) -> dict:
@@ -154,6 +180,7 @@ class Nanodac:
             "target_setpoint": self.get_target_temperature(loop),
             "working_setpoint": self.get_working_setpoint(loop),
             "output": self.get_output(loop),
+            "setpoint_rate": self.get_setpoint_rate(loop),
         }
         self.status_msg = "READY"
         return status

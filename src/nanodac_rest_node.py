@@ -18,6 +18,10 @@ class NanodacNodeConfig(RestNodeConfig):
     nanodac_port: int = Field(default=502, description="Modbus/TCP port, default 502.")
     unit_id: int = Field(default=1, description="Modbus slave/unit id, default 1.")
     loop: int = Field(default=1, description="Control loop exposed by default (1 or 2).")
+    default_ramp_rate: Optional[float] = Field(
+        default=None,
+        description="If set, applied at startup as the setpoint ramp-rate limit (eng units/min; 0 = instant) for smooth setpoint changes.",
+    )
 
 
 class NanodacNode(RestNode):
@@ -41,6 +45,8 @@ class NanodacNode(RestNode):
                 port=self.config.nanodac_port,
                 unit_id=self.config.unit_id,
             )
+            if self.config.default_ramp_rate is not None:
+                self.nanodac_interface.set_setpoint_rate(self.config.default_ramp_rate, self.config.loop)
         except Exception as err:
             self.logger.log_error(f"Error starting the nanodac node: {err}")
             raise
@@ -91,10 +97,26 @@ class NanodacNode(RestNode):
         self,
         temperature: Annotated[float, "target temperature in engineering units"],
         loop: Annotated[Optional[int], "control loop (1 or 2)"] = None,
+        ramp_rate: Annotated[
+            Optional[float], "setpoint ramp rate in units/min (0 = instant); omit to leave unchanged"
+        ] = None,
     ):
-        """Write the loop target setpoint."""
+        """Write the loop target setpoint, optionally ramping to it at ramp_rate."""
         try:
-            self.nanodac_interface.set_temperature(temperature, loop or self.config.loop)
+            self.nanodac_interface.set_temperature(temperature, loop or self.config.loop, ramp_rate=ramp_rate)
+        except Exception as err:
+            return ActionFailed(errors=[str(err)])
+        return ActionSucceeded()
+
+    @action(name="set_setpoint_rate", description="Set the setpoint ramp rate (units/min; 0 = instant)")
+    def set_setpoint_rate(
+        self,
+        rate: Annotated[float, "setpoint ramp rate in engineering units per minute (0 = disable ramp)"],
+        loop: Annotated[Optional[int], "control loop (1 or 2)"] = None,
+    ):
+        """Set the loop's setpoint ramp-rate limit for smooth setpoint changes."""
+        try:
+            self.nanodac_interface.set_setpoint_rate(rate, loop or self.config.loop)
         except Exception as err:
             return ActionFailed(errors=[str(err)])
         return ActionSucceeded()
@@ -107,6 +129,15 @@ class NanodacNode(RestNode):
         except Exception as err:
             return ActionFailed(errors=[str(err)])
         return ActionSucceeded(json_result={"output": value})
+
+    @action(name="get_setpoint_rate", description="Read the setpoint ramp rate (units/min; 0 = off)")
+    def get_setpoint_rate(self, loop: Annotated[Optional[int], "control loop (1 or 2)"] = None):
+        """Return the loop's setpoint ramp-rate limit."""
+        try:
+            value = self.nanodac_interface.get_setpoint_rate(loop or self.config.loop)
+        except Exception as err:
+            return ActionFailed(errors=[str(err)])
+        return ActionSucceeded(json_result={"setpoint_rate": value})
 
 
 if __name__ == "__main__":

@@ -38,19 +38,39 @@ REAL_PARAMS = {"PV", "TargetSP", "WorkingSP", "ActiveOut"}
 SP_RATE = {1: 5730, 2: 5986}
 SP_RATE_DISABLE = {1: 5731, 2: 5987}
 
+# Default setpoint ramp rate (engineering units/min) the driver applies on connect and
+# uses for set_temperature when no per-call ramp_rate is given. Set to None to leave the
+# device's existing ramp setting untouched.
+DEFAULT_RAMP_RATE = 10.0
+
 
 class Nanodac:
     """Python interface for remote get/set of a Eurotherm nanodac over Modbus/TCP."""
 
-    def __init__(self, host: str, port: int = 502, unit_id: int = 1, timeout: float = 2.0) -> None:
-        """Store connection parameters and open the Modbus/TCP connection."""
+    def __init__(
+        self,
+        host: str,
+        port: int = 502,
+        unit_id: int = 1,
+        timeout: float = 2.0,
+        default_ramp_rate: Optional[float] = DEFAULT_RAMP_RATE,
+    ) -> None:
+        """Open the Modbus/TCP connection and apply the default setpoint ramp rate.
+
+        default_ramp_rate (engineering units/min) is applied to loop 1 on connect and used
+        by set_temperature when no per-call ramp_rate is given; pass None to leave the
+        device's existing ramp setting untouched.
+        """
         self.host = host
         self.port = port
         self.unit_id = unit_id
         self.timeout = timeout
+        self.default_ramp_rate = default_ramp_rate
         self.connection: Optional[ModbusTcpClient] = None
         self.status_msg = ""
         self.connect()
+        if self.default_ramp_rate is not None:
+            self.set_setpoint_rate(self.default_ramp_rate)
 
     def connect(self) -> None:
         """Open the Modbus/TCP connection to the nanodac."""
@@ -162,14 +182,15 @@ class Nanodac:
         """Set the loop target setpoint. NOTE: physically drives the controller.
 
         Writes TargetSP as a native IEEE float at (scaled*2)+0x8000 per HA030554.
-        If ``ramp_rate`` is given (engineering units/min), the setpoint ramp limit is set
-        first so the loop slews to ``value`` smoothly (ramp_rate=0 => instant step). If
-        ``ramp_rate`` is None, the existing ramp setting is left unchanged.
-        The applied setpoint is also subject to the loop's SP limits (SPHighLimit /
-        SPLowLimit) and active-SP selection (SPSelect).
+        The setpoint ramp limit is applied first: ``ramp_rate`` (engineering units/min)
+        overrides for this call; if omitted, the instance ``default_ramp_rate`` is used
+        (ramp_rate=0 => instant step). If both are None, the device's existing ramp setting
+        is left unchanged. Also subject to the loop's SP limits (SPHighLimit / SPLowLimit)
+        and active-SP selection (SPSelect).
         """
-        if ramp_rate is not None:
-            self.set_setpoint_rate(ramp_rate, loop)
+        rate = ramp_rate if ramp_rate is not None else self.default_ramp_rate
+        if rate is not None:
+            self.set_setpoint_rate(rate, loop)
         self.write_parameter("TargetSP", value, loop)
 
     def get_status(self, loop: int = 1) -> dict:

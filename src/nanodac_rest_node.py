@@ -20,7 +20,7 @@ class NanodacNodeConfig(RestNodeConfig):
     loop: int = Field(default=1, description="Control loop exposed by default (1 or 2).")
     default_ramp_rate: Optional[float] = Field(
         default=None,
-        description="If set, applied at startup as the setpoint ramp-rate limit (eng units/min; 0 = instant) for smooth setpoint changes.",
+        description="Setpoint ramp-rate limit (eng units/min; 0 = instant) applied at startup. If unset, the driver's built-in default is used.",
     )
 
 
@@ -40,13 +40,14 @@ class NanodacNode(RestNode):
         if self.config.nanodac_ip is None:
             raise ValueError("nanodac_ip is not set in the configuration.")
         try:
-            self.nanodac_interface = Nanodac(
-                host=self.config.nanodac_ip,
-                port=self.config.nanodac_port,
-                unit_id=self.config.unit_id,
-            )
+            kwargs = {
+                "host": self.config.nanodac_ip,
+                "port": self.config.nanodac_port,
+                "unit_id": self.config.unit_id,
+            }
             if self.config.default_ramp_rate is not None:
-                self.nanodac_interface.set_setpoint_rate(self.config.default_ramp_rate, self.config.loop)
+                kwargs["default_ramp_rate"] = self.config.default_ramp_rate
+            self.nanodac_interface = Nanodac(**kwargs)
         except Exception as err:
             self.logger.log_error(f"Error starting the nanodac node: {err}")
             raise
